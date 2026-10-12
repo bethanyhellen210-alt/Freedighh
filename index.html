@@ -366,8 +366,9 @@
             scheduleReconnect('Connection timed out');
           }
         }
-      }, 12000);
+      }, 10000);
     } catch (error) {
+      endpointIndex = (endpointIndex + 1) % WS_URLS.length;
       scheduleReconnect('Unable to open connection');
       return;
     }
@@ -378,8 +379,15 @@
       connectionTimeoutTimer = null;
       reconnectAttempt = 0;
       lastMessageAt = Date.now();
-      setStatus('Connected • loading live ticks', true);
-      subscribeTicks(currentSymbol);
+      setStatus('Connected • requesting live market data', true);
+      // Confirm the Deriv API session immediately, then start the selected market feed.
+      try {
+        socket.send(JSON.stringify({ ping: 1, req_id: 1 }));
+        subscribeTicks(currentSymbol);
+      } catch (_) {
+        try { socket.close(); } catch (_) {}
+        return;
+      }
       heartbeatTimer = setInterval(() => {
         if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
         // Deriv ping keeps idle connections alive. Reconnect only if the socket is stale.
@@ -406,7 +414,10 @@
         signalActionEl.className = 'signal-action WAIT';
         return;
       }
-      if (data.msg_type === 'ping') return;
+      if (data.msg_type === 'ping') {
+        setStatus('Connected • Deriv API responding', true);
+        return;
+      }
       if (data.subscription && data.subscription.id) {
         activeSubscriptionId = data.subscription.id;
       }
