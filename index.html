@@ -299,6 +299,7 @@
   let manuallyStopped = false;
   let activeSubscriptionId = null;
   let lastMessageAt = 0;
+  let hasReceivedMarketData = false;
   let connectionGeneration = 0;
 
   const statusDot = document.getElementById('statusDot');
@@ -393,7 +394,7 @@
       connectionTimeoutTimer = setTimeout(() => {
         if (generation === connectionGeneration && ws === socket &&
             socket.readyState === WebSocket.OPEN &&
-            Date.now() - lastMessageAt >= 12000) {
+            !hasReceivedMarketData) {
           setStatus('Connected, but no Deriv response • retrying', false);
           try { socket.close(); } catch (_) {
             ws = null;
@@ -433,6 +434,7 @@
         return;
       }
       if (data.msg_type === 'history' || data.msg_type === 'tick') {
+        hasReceivedMarketData = true;
         clearTimeout(connectionTimeoutTimer);
         connectionTimeoutTimer = null;
       }
@@ -488,6 +490,7 @@
   function subscribeTicks(symbol) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     currentSymbol = symbol;
+    hasReceivedMarketData = false;
     digitsHistory = [];
     currentPriceEl.textContent = 'Waiting for tick…';
     currentDigitEl.textContent = '-';
