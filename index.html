@@ -280,11 +280,11 @@
 </div>
 
 <script>
-  // Stable Deriv public market-data connection. One socket, one reconnect timer.
-  const APP_ID = '1089';
+  // Public Deriv market data only: no login, API token, or App ID.
+  // The public WebSocket supports ticks and tick history without account authorization.
   const WS_URLS = [
-    `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`,
-    `wss://ws.binaryws.com/websockets/v3?app_id=${APP_ID}`
+    'wss://ws.binaryws.com/websockets/v3',
+    'wss://ws.derivws.com/websockets/v3'
   ];
   let ws = null;
   let digitsHistory = [];
@@ -401,11 +401,8 @@
       try { data = JSON.parse(event.data); } catch (_) { return; }
       if (data.error) {
         setStatus('Deriv: ' + (data.error.message || 'request error'), false);
-        if (data.error.code === 'InvalidAppID' || data.error.code === 'AuthorizationRequired') {
-          // Public tick data should not need authorization; don't loop on a rejected app id.
-          clearConnectionTimers();
-          return;
-        }
+        // A request-level error is shown to the user. Public tick data must not
+        // require account authorization; reconnect only if the socket itself closes.
         return;
       }
       if (data.msg_type === 'ping') return;
