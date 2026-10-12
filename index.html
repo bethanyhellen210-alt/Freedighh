@@ -280,12 +280,11 @@
 </div>
 
 <script>
-  // Public market ticks do not need a personal API token, but the legacy
-  // Deriv WebSocket endpoint uses an app_id. 1089 is Deriv's documented test ID.
-  const PUBLIC_APP_ID = '1089';
+  // Deriv's current public market-data example supports unauthenticated tick streams.
+  // Fallback uses the legacy documented endpoint with its testing App ID.
   const WS_URLS = [
-    `wss://ws.derivws.com/websockets/v3?app_id=${PUBLIC_APP_ID}`,
-    `wss://ws.binaryws.com/websockets/v3?app_id=${PUBLIC_APP_ID}`
+    'wss://ws.binaryws.com/websockets/v3',
+    'wss://ws.derivws.com/websockets/v3?app_id=1089'
   ];
   let ws = null;
   let digitsHistory = [];
@@ -401,12 +400,17 @@
       let data;
       try { data = JSON.parse(event.data); } catch (_) { return; }
       if (data.error) {
-        setStatus('Deriv: ' + (data.error.message || 'request error'), false);
-        // A request-level error is shown to the user. Public tick data must not
-        // require account authorization; reconnect only if the socket itself closes.
+        const errorText = data.error.message || data.error.code || 'request error';
+        setStatus('Deriv error: ' + errorText, false);
+        signalTypeEl.textContent = 'DATA REQUEST FAILED';
+        signalActionEl.textContent = errorText;
+        signalActionEl.className = 'signal-action WAIT';
         return;
       }
       if (data.msg_type === 'ping') return;
+      if (data.subscription && data.subscription.id) {
+        activeSubscriptionId = data.subscription.id;
+      }
       if (data.msg_type === 'history' && data.history && Array.isArray(data.history.prices)) {
         digitsHistory = data.history.prices.map((price, i) =>
           extractDigit(price, data.history.times && data.history.times[i], data.pip_size)
@@ -447,7 +451,8 @@
       connectionTimeoutTimer = null;
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
-      scheduleReconnect('Disconnected');
+      scheduleReconnect('Disconnected (code ' + (event.code || 'unknown') +
+        (event.reason ? ': ' + event.reason : '') + ')');
     };
   }
 
@@ -471,13 +476,19 @@
         ws.send(JSON.stringify({ forget_all: 'ticks' }));
       }
       activeSubscriptionId = null;
+      // Load history once, then use the dedicated public ticks stream for live updates.
       ws.send(JSON.stringify({
         ticks_history: symbol,
         adjust_start_time: 1,
         count: 50,
         end: 'latest',
         style: 'ticks',
-        subscribe: 1
+        req_id: 101
+      }));
+      ws.send(JSON.stringify({
+        ticks: symbol,
+        subscribe: 1,
+        req_id: 102
       }));
     } catch (_) {
       try { ws.close(); } catch (_) {}
