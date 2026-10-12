@@ -1,0 +1,12 @@
+{
+  "name": "deriv-digit-signal-bot",
+  "version": "1.0.0",
+  "description": "Deriv Synthetic Index Digit Signal Master Bot",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+}
