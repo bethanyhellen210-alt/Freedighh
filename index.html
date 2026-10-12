@@ -280,11 +280,12 @@
 </div>
 
 <script>
-  // Public Deriv market data only: no login, API token, or App ID.
-  // The public WebSocket supports ticks and tick history without account authorization.
+  // Public market ticks do not need a personal API token, but the legacy
+  // Deriv WebSocket endpoint uses an app_id. 1089 is Deriv's documented test ID.
+  const PUBLIC_APP_ID = '1089';
   const WS_URLS = [
-    'wss://ws.binaryws.com/websockets/v3',
-    'wss://ws.derivws.com/websockets/v3'
+    `wss://ws.derivws.com/websockets/v3?app_id=${PUBLIC_APP_ID}`,
+    `wss://ws.binaryws.com/websockets/v3?app_id=${PUBLIC_APP_ID}`
   ];
   let ws = null;
   let digitsHistory = [];
