@@ -280,15 +280,26 @@
 </div>
 
 <script>
-  // WebSocket Setup
+  // Stable Deriv public market-data connection. One socket, one reconnect timer.
   const APP_ID = '1089';
+  const WS_URLS = [
+    `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`,
+    `wss://ws.binaryws.com/websockets/v3?app_id=${APP_ID}`
+  ];
   let ws = null;
   let digitsHistory = [];
-  let currentSymbol = '1HZ10V';
+  let currentSymbol = document.getElementById('marketSelect').value;
   let tickTimeoutTimer = null;
   let secondsRemaining = 0;
+  let reconnectTimer = null;
+  let heartbeatTimer = null;
+  let reconnectAttempt = 0;
+  let endpointIndex = 0;
+  let manuallyStopped = false;
+  let activeSubscriptionId = null;
+  let lastMessageAt = 0;
+  let connectionGeneration = 0;
 
-  // DOM Elements
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
   const marketSelect = document.getElementById('marketSelect');
@@ -304,67 +315,166 @@
   const digitStripEl = document.getElementById('digitStrip');
   const freqGridEl = document.getElementById('freqGrid');
 
-  function initWebSocket() {
-    if (ws) { ws.close(); }
-    
-    ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`);
+  function setStatus(message, connected = false) {
+    statusText.textContent = message;
+    statusDot.classList.toggle('connected', connected);
+  }
 
-    ws.onopen = () => {
-      statusDot.classList.add('connected');
-      statusText.textContent = 'Connected (Live)';
+  function clearConnectionTimers() {
+    clearTimeout(reconnectTimer);
+    clearInterval(heartbeatTimer);
+    reconnectTimer = null;
+    heartbeatTimer = null;
+  }
+
+  function scheduleReconnect(reason = 'Connection lost') {
+    if (manuallyStopped || reconnectTimer) return;
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+    setStatus(reason + ' • retrying', false);
+    const delay = Math.min(30000, 1000 * (2 ** Math.min(reconnectAttempt, 5)));
+    reconnectAttempt++;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      // Try the alternate public endpoint after repeated failures.
+      if (reconnectAttempt > 1) endpointIndex = (endpointIndex + 1) % WS_URLS.length;
+      connectDeriv();
+    }, delay);
+  }
+
+  function connectDeriv() {
+    if (manuallyStopped) return;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    clearConnectionTimers();
+    const generation = ++connectionGeneration;
+    setStatus('Connecting to Deriv…', false);
+    let socket;
+    try {
+      socket = new WebSocket(WS_URLS[endpointIndex]);
+      ws = socket;
+    } catch (error) {
+      scheduleReconnect('Unable to open connection');
+      return;
+    }
+
+    socket.onopen = () => {
+      if (generation !== connectionGeneration || ws !== socket) return;
+      reconnectAttempt = 0;
+      lastMessageAt = Date.now();
+      setStatus('Connected • loading live ticks', true);
       subscribeTicks(currentSymbol);
+      heartbeatTimer = setInterval(() => {
+        if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+        // Deriv ping keeps idle connections alive. Reconnect only if the socket is stale.
+        if (Date.now() - lastMessageAt > 65000) {
+          try { socket.close(); } catch (_) {}
+          return;
+        }
+        try { socket.send(JSON.stringify({ ping: 1 })); } catch (_) {
+          try { socket.close(); } catch (_) {}
+        }
+      }, 30000);
     };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.msg_type === 'history') {
-        const prices = data.history.prices;
-        digitsHistory = prices.map(price => extractDigit(price));
+    socket.onmessage = (event) => {
+      if (generation !== connectionGeneration || ws !== socket) return;
+      lastMessageAt = Date.now();
+      let data;
+      try { data = JSON.parse(event.data); } catch (_) { return; }
+      if (data.error) {
+        setStatus('Deriv: ' + (data.error.message || 'request error'), false);
+        if (data.error.code === 'InvalidAppID' || data.error.code === 'AuthorizationRequired') {
+          // Public tick data should not need authorization; don't loop on a rejected app id.
+          clearConnectionTimers();
+          return;
+        }
+        return;
+      }
+      if (data.msg_type === 'ping') return;
+      if (data.msg_type === 'history' && data.history && Array.isArray(data.history.prices)) {
+        digitsHistory = data.history.prices.map((price, i) =>
+          extractDigit(price, data.history.times && data.history.times[i], data.pip_size)
+        ).filter(Number.isInteger).slice(-50);
         renderHistory();
         analyzeSignal();
-      } else if (data.msg_type === 'tick') {
-        const price = data.tick.quote;
-        const digit = extractDigit(price);
-
-        currentPriceEl.textContent = price;
+        setStatus('Live • ' + currentSymbol, true);
+      } else if (data.msg_type === 'tick' && data.tick) {
+        const tick = data.tick;
+        const price = tick.quote;
+        const digit = extractDigit(price, tick.epoch, tick.pip_size);
+        if (!Number.isInteger(digit)) return;
+        currentPriceEl.textContent = String(price);
         currentDigitEl.textContent = digit;
-
-        digitsHistory.push(digit);
-        if (digitsHistory.length > 50) digitsHistory.shift();
-
-        renderHistory();
-        analyzeSignal();
+        // Avoid duplicate history entries if a feed replays a tick.
+        if (tick.epoch !== window.lastDerivTickEpoch) {
+          digitsHistory.push(digit);
+          if (digitsHistory.length > 50) digitsHistory.shift();
+          window.lastDerivTickEpoch = tick.epoch;
+          renderHistory();
+          analyzeSignal();
+        }
+        setStatus('Live • ' + currentSymbol, true);
         resetTickTimeout();
       }
     };
 
-    ws.onclose = () => {
-      statusDot.classList.remove('connected');
-      statusText.textContent = 'Disconnected (Reconnecting...)';
-      setTimeout(initWebSocket, 3000);
+    socket.onerror = () => {
+      if (generation === connectionGeneration && ws === socket) {
+        setStatus('Deriv connection error', false);
+      }
+    };
+    socket.onclose = () => {
+      if (generation !== connectionGeneration || ws !== socket) return;
+      ws = null;
+      activeSubscriptionId = null;
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+      scheduleReconnect('Disconnected');
     };
   }
 
   function subscribeTicks(symbol) {
-    if (ws.readyState === WebSocket.OPEN) {
-      // Forget old subscriptions & request fresh history + subscribe
-      ws.send(JSON.stringify({ forget_all: "ticks" }));
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    currentSymbol = symbol;
+    digitsHistory = [];
+    currentPriceEl.textContent = 'Waiting for tick…';
+    currentDigitEl.textContent = '-';
+    signalTypeEl.textContent = 'LOADING LIVE MARKET DATA';
+    signalActionEl.textContent = 'WAITING FOR TICKS';
+    signalActionEl.className = 'signal-action WAIT';
+    confidenceValEl.textContent = '0%';
+    confidenceFillEl.style.width = '0%';
+    timeoutBadgeEl.textContent = 'WAITING FOR LIVE TICK';
+    renderHistory();
+    try {
+      if (activeSubscriptionId) {
+        ws.send(JSON.stringify({ forget: activeSubscriptionId }));
+      } else {
+        ws.send(JSON.stringify({ forget_all: 'ticks' }));
+      }
+      activeSubscriptionId = null;
       ws.send(JSON.stringify({
         ticks_history: symbol,
         adjust_start_time: 1,
         count: 50,
-        end: "latest",
-        start: 1,
-        style: "ticks",
+        end: 'latest',
+        style: 'ticks',
         subscribe: 1
       }));
+    } catch (_) {
+      try { ws.close(); } catch (_) {}
     }
   }
 
-  function extractDigit(price) {
-    const str = price.toString();
-    return parseInt(str.charAt(str.length - 1));
+  function extractDigit(price, epoch, pipSize) {
+    if (price === undefined || price === null) return NaN;
+    // Preserve the instrument's quoted decimal precision before reading its final digit.
+    const decimals = Number.isInteger(pipSize) ? pipSize : null;
+    const value = Number(price);
+    if (!Number.isFinite(value)) return NaN;
+    const formatted = decimals !== null ? value.toFixed(decimals) : String(price);
+    const digits = formatted.replace(/\\D/g, '');
+    return digits.length ? Number(digits[digits.length - 1]) : NaN;
   }
 
   // Timer Tick Expiration
@@ -541,18 +651,28 @@
     }
   }
 
-  // Event Listeners
+  // Start the feed once. Market changes reuse the same socket.
   marketSelect.addEventListener('change', (e) => {
     currentSymbol = e.target.value;
-    subscribeTicks(currentSymbol);
+    if (ws && ws.readyState === WebSocket.OPEN) subscribeTicks(currentSymbol);
+    else connectDeriv();
   });
 
-  strategySelect.addEventListener('change', () => {
-    analyzeSignal();
+  strategySelect.addEventListener('change', analyzeSignal);
+  window.addEventListener('online', () => {
+    if (!ws || ws.readyState === WebSocket.CLOSED) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connectDeriv();
+    }
+  });
+  window.addEventListener('beforeunload', () => {
+    manuallyStopped = true;
+    clearConnectionTimers();
+    if (ws) ws.close();
   });
 
-  // Start Bot
-  initWebSocket();
+  connectDeriv();
 </script>
 </body>
 </html>
