@@ -293,6 +293,7 @@
   let secondsRemaining = 0;
   let reconnectTimer = null;
   let heartbeatTimer = null;
+  let connectionTimeoutTimer = null;
   let reconnectAttempt = 0;
   let endpointIndex = 0;
   let manuallyStopped = false;
@@ -323,8 +324,10 @@
   function clearConnectionTimers() {
     clearTimeout(reconnectTimer);
     clearInterval(heartbeatTimer);
+    clearTimeout(connectionTimeoutTimer);
     reconnectTimer = null;
     heartbeatTimer = null;
+    connectionTimeoutTimer = null;
   }
 
   function scheduleReconnect(reason = 'Connection lost') {
@@ -352,6 +355,19 @@
     try {
       socket = new WebSocket(WS_URLS[endpointIndex]);
       ws = socket;
+      // Some mobile networks leave WebSocket handshakes pending forever.
+      // Force a close so onclose can switch endpoint and schedule a retry.
+      connectionTimeoutTimer = setTimeout(() => {
+        if (generation === connectionGeneration && ws === socket &&
+            socket.readyState === WebSocket.CONNECTING) {
+          setStatus('Connection timed out • switching server', false);
+          endpointIndex = (endpointIndex + 1) % WS_URLS.length;
+          try { socket.close(); } catch (_) {
+            ws = null;
+            scheduleReconnect('Connection timed out');
+          }
+        }
+      }, 12000);
     } catch (error) {
       scheduleReconnect('Unable to open connection');
       return;
@@ -359,6 +375,8 @@
 
     socket.onopen = () => {
       if (generation !== connectionGeneration || ws !== socket) return;
+      clearTimeout(connectionTimeoutTimer);
+      connectionTimeoutTimer = null;
       reconnectAttempt = 0;
       lastMessageAt = Date.now();
       setStatus('Connected • loading live ticks', true);
@@ -427,6 +445,8 @@
       if (generation !== connectionGeneration || ws !== socket) return;
       ws = null;
       activeSubscriptionId = null;
+      clearTimeout(connectionTimeoutTimer);
+      connectionTimeoutTimer = null;
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
       scheduleReconnect('Disconnected');
@@ -473,7 +493,7 @@
     const value = Number(price);
     if (!Number.isFinite(value)) return NaN;
     const formatted = decimals !== null ? value.toFixed(decimals) : String(price);
-    const digits = formatted.replace(/\\D/g, '');
+    const digits = formatted.replace(/\D/g, '');
     return digits.length ? Number(digits[digits.length - 1]) : NaN;
   }
 
