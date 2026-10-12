@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deriv Digit Signal Master Bot</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --accent-blue: #2f81f7;
+      --accent-green: #238636;
+      --accent-red: #da3633;
+      --accent-purple: #8957e5;
+      --accent-gold: #d29922;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --font-main: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-logo {
+      width: 36px; height: 36px; background: var(--accent-blue);
+      border-radius: 8px; display: grid; place-items: center; font-weight: 800; color: #fff;
+    }
+    .brand h1 { font-size: 1.25rem; font-weight: 700; color: #fff; }
+
+    .connection-status {
+      display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600;
+    }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background-color: var(--accent-red); }
+    .status-dot.connected { background-color: #2ea44f; box-shadow: 0 0 8px #2ea44f; }
+
+    /* Layout Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 900px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      font-weight: 700;
+    }
+
+    /* Form Controls */
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
+    select, input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-family: var(--font-main);
+      font-size: 0.9rem;
+      outline: none;
+    }
+    select:focus, input:focus { border-color: var(--accent-blue); }
+
+    /* Live Digit Display */
+    .current-tick-box {
+      text-align: center;
+      padding: 20px;
+      background: #0d1117;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      margin-bottom: 20px;
+    }
+    .current-price { font-family: var(--font-mono); font-size: 1.2rem; color: var(--text-muted); }
+    .current-digit {
+      font-family: var(--font-mono);
+      font-size: 4rem;
+      font-weight: 800;
+      line-height: 1;
+      margin: 10px 0;
+      color: #fff;
+    }
+
+    /* Signal Card Main Highlight */
+    .signal-card {
+      background: linear-gradient(135deg, rgba(22,27,34,1) 0%, rgba(13,17,23,1) 100%);
+      border: 2px solid var(--card-border);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .signal-card.active { border-color: var(--accent-blue); }
+
+    .signal-type { font-size: 1rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+    .signal-action {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin: 12px 0;
+      letter-spacing: -0.02em;
+    }
+    .signal-action.BUY { color: #3fb950; }
+    .signal-action.WAIT { color: var(--text-muted); }
+
+    .confidence-wrapper { margin: 15px 0; }
+    .confidence-label { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 6px; }
+    .confidence-bar-bg { width: 100%; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; }
+    .confidence-bar-fill { height: 100%; width: 0%; background: var(--accent-blue); transition: width 0.3s ease; }
+
+    .timeout-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(47, 129, 247, 0.15);
+      color: var(--accent-blue);
+      font-size: 0.8rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    /* Digit Feed Strip */
+    .digit-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+    .digit-badge {
+      min-width: 40px; height: 40px; border-radius: 8px;
+      display: grid; place-items: center; font-family: var(--font-mono);
+      font-weight: 700; font-size: 1.1rem; background: #0d1117; border: 1px solid var(--card-border);
+    }
+    .digit-badge.even { border-color: rgba(47, 129, 247, 0.5); color: #58a6ff; }
+    .digit-badge.odd { border-color: rgba(137, 87, 229, 0.5); color: #bc8cff; }
+
+    /* Frequency Histogram */
+    .freq-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; text-align: center; }
+    .freq-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .freq-bar-wrapper { width: 100%; height: 100px; background: #0d1117; border-radius: 6px; display: flex; align-items: flex-end; padding: 2px; }
+    .freq-bar { width: 100%; background: var(--accent-blue); border-radius: 4px; transition: height 0.3s ease; }
+    .freq-bar.cold { background: var(--accent-gold); }
+    .freq-digit { font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; }
+    .freq-count { font-size: 0.7rem; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="brand-logo">D</div>
+      <h1>Deriv Digit Master Bot</h1>
+    </div>
+    <div class="connection-status">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Connecting...</span>
+    </div>
+  </header>
+
+  <div class="dashboard-grid">
+    <!-- Left Panel: Controls & Live Digit -->
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-title">Market Settings</div>
+        
+        <div class="form-group">
+          <label for="marketSelect">Select Market</label>
+          <select id="marketSelect">
+            <optgroup label="Continuous Volatility">
+              <option value="R_10">Volatility 10 Index</option>
+              <option value="R_25">Volatility 25 Index</option>
+              <option value="R_50">Volatility 50 Index</option>
+              <option value="R_75">Volatility 75 Index</option>
+              <option value="R_100">Volatility 100 Index</option>
+            </optgroup>
+            <optgroup label="1-Second Volatility (1HZ)">
+              <option value="1HZ10V" selected>Volatility 10 (1s) Index</option>
+              <option value="1HZ25V">Volatility 25 (1s) Index</option>
+              <option value="1HZ50V">Volatility 50 (1s) Index</option>
+              <option value="1HZ75V">Volatility 75 (1s) Index</option>
+              <option value="1HZ100V">Volatility 100 (1s) Index</option>
+            </optgroup>
+            <optgroup label="Jump Indices">
+              <option value="JD10">Jump 10 Index</option>
+              <option value="JD25">Jump 25 Index</option>
+              <option value="JD50">Jump 50 Index</option>
+              <option value="JD75">Jump 75 Index</option>
+              <option value="JD100">Jump 100 Index</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="strategySelect">Contract Strategy</label>
+          <select id="strategySelect">
+            <option value="EVEN_ODD">Even / Odd (Parity Mean Reversion)</option>
+            <option value="OVER_UNDER_GRIND">Over / Under (80% Win Grind: Over 1 / Under 8)</option>
+            <option value="OVER_UNDER_REBALANCE">Over / Under (50/50 Swing: Over 4 / Under 5)</option>
+            <option value="DIFFERS">Differs (Repeat Avoidance)</option>
+            <option value="MATCHES">Matches (Cold Digit Sniper)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Live Digit Stream</div>
+        <div class="current-tick-box">
+          <div id="currentPrice" class="current-price">0000.00</div>
+          <div id="currentDigit" class="current-digit">-</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">LAST TICK DIGIT</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Signals & Analytics -->
+    <div class="panel-right">
+      <!-- Signal Box Card -->
+      <div id="signalCard" class="card signal-card">
+        <div id="signalType" class="signal-type">SCANNING MARKET...</div>
+        <div id="signalAction" class="signal-action WAIT">WAITING FOR ENTRY</div>
+        
+        <div class="confidence-wrapper">
+          <div class="confidence-label">
+            <span>Signal Confidence Edge</span>
+            <span id="confidenceVal">0%</span>
+          </div>
+          <div class="confidence-bar-bg">
+            <div id="confidenceFill" class="confidence-bar-fill"></div>
+          </div>
+        </div>
+
+        <div id="timeoutBadge" class="timeout-badge">EXPIRES: -</div>
+      </div>
+
+      <!-- Tick History Ribbon -->
+      <div class="card">
+        <div class="card-title">Recent Digit History (Last 20 Ticks)</div>
+        <div id="digitStrip" class="digit-strip"></div>
+      </div>
+
+      <!-- Frequency Distribution -->
+      <div class="card">
+        <div class="card-title">Digit Distribution (Last 50 Ticks)</div>
+        <div class="freq-grid" id="freqGrid"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // WebSocket Setup
+  const APP_ID = '1089';
+  let ws = null;
+  let digitsHistory = [];
+  let currentSymbol = '1HZ10V';
+  let tickTimeoutTimer = null;
+  let secondsRemaining = 0;
+
+  // DOM Elements
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const marketSelect = document.getElementById('marketSelect');
+  const strategySelect = document.getElementById('strategySelect');
+  const currentPriceEl = document.getElementById('currentPrice');
+  const currentDigitEl = document.getElementById('currentDigit');
+  const signalCard = document.getElementById('signalCard');
+  const signalTypeEl = document.getElementById('signalType');
+  const signalActionEl = document.getElementById('signalAction');
+  const confidenceValEl = document.getElementById('confidenceVal');
+  const confidenceFillEl = document.getElementById('confidenceFill');
+  const timeoutBadgeEl = document.getElementById('timeoutBadge');
+  const digitStripEl = document.getElementById('digitStrip');
+  const freqGridEl = document.getElementById('freqGrid');
+
+  function initWebSocket() {
+    if (ws) { ws.close(); }
+    
+    ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`);
+
+    ws.onopen = () => {
+      statusDot.classList.add('connected');
+      statusText.textContent = 'Connected (Live)';
+      subscribeTicks(currentSymbol);
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.msg_type === 'history') {
+        const prices = data.history.prices;
+        digitsHistory = prices.map(price => extractDigit(price));
+        renderHistory();
+        analyzeSignal();
+      } else if (data.msg_type === 'tick') {
+        const price = data.tick.quote;
+        const digit = extractDigit(price);
+
+        currentPriceEl.textContent = price;
+        currentDigitEl.textContent = digit;
+
+        digitsHistory.push(digit);
+        if (digitsHistory.length > 50) digitsHistory.shift();
+
+        renderHistory();
+        analyzeSignal();
+        resetTickTimeout();
+      }
+    };
+
+    ws.onclose = () => {
+      statusDot.classList.remove('connected');
+      statusText.textContent = 'Disconnected (Reconnecting...)';
+      setTimeout(initWebSocket, 3000);
+    };
+  }
+
+  function subscribeTicks(symbol) {
+    if (ws.readyState === WebSocket.OPEN) {
+      // Forget old subscriptions & request fresh history + subscribe
+      ws.send(JSON.stringify({ forget_all: "ticks" }));
+      ws.send(JSON.stringify({
+        ticks_history: symbol,
+        adjust_start_time: 1,
+        count: 50,
+        end: "latest",
+        start: 1,
+        style: "ticks",
+        subscribe: 1
+      }));
+    }
+  }
+
+  function extractDigit(price) {
+    const str = price.toString();
+    return parseInt(str.charAt(str.length - 1));
+  }
+
+  // Timer Tick Expiration
+  function resetTickTimeout() {
+    clearInterval(tickTimeoutTimer);
+    const is1s = currentSymbol.includes('1HZ');
+    secondsRemaining = is1s ? 1 : 2;
+    timeoutBadgeEl.textContent = `EXPIRES IN: ${secondsRemaining}s / 1 TICK`;
+
+    tickTimeoutTimer = setInterval(() => {
+      secondsRemaining--;
+      if (secondsRemaining <= 0) {
+        clearInterval(tickTimeoutTimer);
+        timeoutBadgeEl.textContent = `REFRESHING...`;
+      } else {
+        timeoutBadgeEl.textContent = `EXPIRES IN: ${secondsRemaining}s`;
+      }
+    }, 1000);
+  }
+
+  // Strategy Analysis Engine
+  function analyzeSignal() {
+    if (digitsHistory.length < 10) return;
+
+    const strategy = strategySelect.value;
+    const lastDigit = digitsHistory[digitsHistory.length - 1];
+
+    let signal = { action: 'WAITING FOR PATTERN', type: 'SCANNING', confidence: 0, class: 'WAIT' };
+
+    if (strategy === 'EVEN_ODD') {
+      // Strategy 1: Even/Odd Parity Streak Exhaustion (3 consecutive digits)
+      let streakCount = 1;
+      const isOdd = lastDigit % 2 !== 0;
+
+      for (let i = digitsHistory.length - 2; i >= 0; i--) {
+        if ((digitsHistory[i] % 2 !== 0) === isOdd) {
+          streakCount++;
+        } else { break; }
+      }
+
+      if (streakCount >= 3) {
+        const target = isOdd ? 'DIGITEVEN' : 'DIGITODD';
+        const confidence = Math.min(95, 50 + (streakCount * 12.5));
+        signal = {
+          action: `BUY ${target}`,
+          type: `STREAK DETECTED (${streakCount} ${isOdd ? 'ODDs' : 'EVENs'})`,
+          confidence: confidence,
+          class: 'BUY'
+        };
+      }
+    } 
+    else if (strategy === 'OVER_UNDER_GRIND') {
+      // Strategy 2A: High Probability Grind (Over 1 / Under 8)
+      const prevDigit = digitsHistory[digitsHistory.length - 2];
+      
+      if (lastDigit <= 1 && prevDigit <= 1) {
+        signal = {
+          action: 'BUY DIGITOVER (BARRIER: 1)',
+          type: 'DOUBLE LOW EXTREME DETECTED (0/1)',
+          confidence: 96,
+          class: 'BUY'
+        };
+      } else if (lastDigit >= 8 && prevDigit >= 8) {
+        signal = {
+          action: 'BUY DIGITUNDER (BARRIER: 8)',
+          type: 'DOUBLE HIGH EXTREME DETECTED (8/9)',
+          confidence: 96,
+          class: 'BUY'
+        };
+      }
+    }
+    else if (strategy === 'OVER_UNDER_REBALANCE') {
+      // Strategy 2B: Mid-Point Rebalance (Over 4 / Under 5)
+      const recent15 = digitsHistory.slice(-15);
+      const under5Count = recent15.filter(d => d <= 4).length;
+      const under5Pct = (under5Count / 15) * 100;
+
+      if (under5Pct >= 73) {
+        signal = {
+          action: 'BUY DIGITOVER (BARRIER: 4)',
+          type: `UNDER-EXPANSION PHASE (${under5Count}/15 Lows)`,
+          confidence: 82,
+          class: 'BUY'
+        };
+      } else if (under5Pct <= 27) {
+        signal = {
+          action: 'BUY DIGITUNDER (BARRIER: 5)',
+          type: `OVER-EXPANSION PHASE (${15 - under5Count}/15 Highs)`,
+          confidence: 82,
+          class: 'BUY'
+        };
+      }
+    }
+    else if (strategy === 'DIFFERS') {
+      // Strategy 3: Differs Repeat Avoidance
+      signal = {
+        action: `BUY DIGITDIFF (BARRIER: ${lastDigit})`,
+        type: `INSTANT REPEAT AVOIDANCE`,
+        confidence: 90,
+        class: 'BUY'
+      };
+    }
+    else if (strategy === 'MATCHES') {
+      // Strategy 4: Cold Digit Sniper (Absence >= 20 Ticks)
+      let coldDigit = null;
+      let maxAbsence = 0;
+
+      for (let d = 0; d <= 9; d++) {
+        const lastIndex = digitsHistory.lastIndexOf(d);
+        const absence = lastIndex === -1 ? digitsHistory.length : (digitsHistory.length - 1 - lastIndex);
+        if (absence >= 20 && absence > maxAbsence) {
+          maxAbsence = absence;
+          coldDigit = d;
+        }
+      }
+
+      if (coldDigit !== null) {
+        signal = {
+          action: `BUY DIGITMATCH (BARRIER: ${coldDigit})`,
+          type: `COLD DIGIT SNIPER (${maxAbsence} Ticks Absent)`,
+          confidence: Math.min(92, 60 + (maxAbsence * 1.5)),
+          class: 'BUY'
+        };
+      }
+    }
+
+    // Update UI Signal Box
+    signalTypeEl.textContent = signal.type;
+    signalActionEl.textContent = signal.action;
+    signalActionEl.className = `signal-action ${signal.class}`;
+    confidenceValEl.textContent = `${Math.round(signal.confidence)}%`;
+    confidenceFillEl.style.width = `${signal.confidence}%`;
+    
+    if (signal.class === 'BUY') {
+      signalCard.classList.add('active');
+    } else {
+      signalCard.classList.remove('active');
+    }
+  }
+
+  // Render Visual Strip & Histogram
+  function renderHistory() {
+    // 1. Last 20 Digits Strip
+    const slice20 = digitsHistory.slice(-20);
+    digitStripEl.innerHTML = '';
+    slice20.forEach(digit => {
+      const badge = document.createElement('div');
+      badge.className = `digit-badge ${digit % 2 === 0 ? 'even' : 'odd'}`;
+      badge.textContent = digit;
+      digitStripEl.appendChild(badge);
+    });
+
+    // 2. Histogram (0 to 9)
+    const counts = Array(10).fill(0);
+    digitsHistory.forEach(d => counts[d]++);
+
+    const maxCount = Math.max(...counts, 1);
+    freqGridEl.innerHTML = '';
+
+    for (let d = 0; d <= 9; d++) {
+      const cnt = counts[d];
+      const pct = (cnt / maxCount) * 100;
+      
+      const col = document.createElement('div');
+      col.className = 'freq-col';
+      col.innerHTML = `
+        <div class="freq-bar-wrapper">
+          <div class="freq-bar ${cnt === 0 ? 'cold' : ''}" style="height: ${pct}%;"></div>
+        </div>
+        <div class="freq-digit">${d}</div>
+        <div class="freq-count">${cnt}</div>
+      `;
+      freqGridEl.appendChild(col);
+    }
+  }
+
+  // Event Listeners
+  marketSelect.addEventListener('change', (e) => {
+    currentSymbol = e.target.value;
+    subscribeTicks(currentSymbol);
+  });
+
+  strategySelect.addEventListener('change', () => {
+    analyzeSignal();
+  });
+
+  // Start Bot
+  initWebSocket();
+</script>
+</body>
+</html>
