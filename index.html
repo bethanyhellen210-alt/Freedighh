@@ -280,11 +280,10 @@
 </div>
 
 <script>
-  // Deriv's current public market-data example supports unauthenticated tick streams.
-  // Fallback uses the legacy documented endpoint with its testing App ID.
+  // New Deriv API public WebSocket: read-only market data, no login or token required.
+  // A new-platform App ID is not appended to this public endpoint.
   const WS_URLS = [
-    'wss://ws.derivws.com/websockets/v3?app_id=1089',
-    'wss://ws.binaryws.com/websockets/v3?app_id=1089'
+    'wss://api.derivws.com/trading/v1/options/ws/public'
   ];
   let ws = null;
   let digitsHistory = [];
