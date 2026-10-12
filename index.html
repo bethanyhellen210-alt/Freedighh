@@ -358,13 +358,13 @@
       // Some mobile networks leave WebSocket handshakes pending forever.
       // Force a close so onclose can switch endpoint and schedule a retry.
       connectionTimeoutTimer = setTimeout(() => {
-        if (generation === connectionGeneration && ws === socket &&
-            socket.readyState === WebSocket.CONNECTING) {
-          setStatus('Connection timed out • switching server', false);
-          try { socket.close(); } catch (_) {
-            ws = null;
-            scheduleReconnect('Connection timed out');
-          }
+        if (generation !== connectionGeneration || ws !== socket) return;
+        if (socket.readyState === WebSocket.CONNECTING) {
+          // Do not rely on the browser firing close after a stalled mobile handshake.
+          ws = null;
+          connectionGeneration++;
+          try { socket.close(); } catch (_) {}
+          scheduleReconnect('Connection timed out');
         }
       }, 10000);
     } catch (error) {
@@ -388,9 +388,21 @@
         try { socket.close(); } catch (_) {}
         return;
       }
+      // If the socket opens but Deriv never returns market data, recover instead of
+      // leaving the dashboard apparently connected but unusable.
+      connectionTimeoutTimer = setTimeout(() => {
+        if (generation === connectionGeneration && ws === socket &&
+            socket.readyState === WebSocket.OPEN &&
+            Date.now() - lastMessageAt >= 12000) {
+          setStatus('Connected, but no Deriv response • retrying', false);
+          try { socket.close(); } catch (_) {
+            ws = null;
+            scheduleReconnect('No response from Deriv');
+          }
+        }
+      }, 12000);
       heartbeatTimer = setInterval(() => {
         if (ws !== socket || socket.readyState !== WebSocket.OPEN) return;
-        // Deriv ping keeps idle connections alive. Reconnect only if the socket is stale.
         if (Date.now() - lastMessageAt > 65000) {
           try { socket.close(); } catch (_) {}
           return;
@@ -416,7 +428,13 @@
       }
       if (data.msg_type === 'ping') {
         setStatus('Connected • Deriv API responding', true);
+        // A ping response confirms the socket works; keep the market-data timeout active
+        // until history or a live tick actually arrives.
         return;
+      }
+      if (data.msg_type === 'history' || data.msg_type === 'tick') {
+        clearTimeout(connectionTimeoutTimer);
+        connectionTimeoutTimer = null;
       }
       if (data.subscription && data.subscription.id) {
         activeSubscriptionId = data.subscription.id;
