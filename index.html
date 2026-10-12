@@ -283,8 +283,8 @@
   // Deriv's current public market-data example supports unauthenticated tick streams.
   // Fallback uses the legacy documented endpoint with its testing App ID.
   const WS_URLS = [
-    'wss://ws.binaryws.com/websockets/v3',
-    'wss://ws.derivws.com/websockets/v3?app_id=1089'
+    'wss://ws.derivws.com/websockets/v3?app_id=1089',
+    'wss://ws.binaryws.com/websockets/v3?app_id=1089'
   ];
   let ws = null;
   let digitsHistory = [];
@@ -340,7 +340,7 @@
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       // Try the alternate public endpoint after repeated failures.
-      if (reconnectAttempt > 1) endpointIndex = (endpointIndex + 1) % WS_URLS.length;
+      endpointIndex = (endpointIndex + 1) % WS_URLS.length;
       connectDeriv();
     }, delay);
   }
@@ -451,6 +451,7 @@
       connectionTimeoutTimer = null;
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
+      endpointIndex = (endpointIndex + 1) % WS_URLS.length;
       scheduleReconnect('Disconnected (code ' + (event.code || 'unknown') +
         (event.reason ? ': ' + event.reason : '') + ')');
     };
