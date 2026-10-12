@@ -361,7 +361,6 @@
         if (generation === connectionGeneration && ws === socket &&
             socket.readyState === WebSocket.CONNECTING) {
           setStatus('Connection timed out • switching server', false);
-          endpointIndex = (endpointIndex + 1) % WS_URLS.length;
           try { socket.close(); } catch (_) {
             ws = null;
             scheduleReconnect('Connection timed out');
@@ -440,7 +439,8 @@
 
     socket.onerror = () => {
       if (generation === connectionGeneration && ws === socket) {
-        setStatus('Deriv connection error', false);
+        setStatus('WebSocket error • switching server', false);
+        try { socket.close(); } catch (_) { /* onclose normally handles failover */ }
       }
     };
     socket.onclose = (event) => {
@@ -451,7 +451,6 @@
       connectionTimeoutTimer = null;
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
-      endpointIndex = (endpointIndex + 1) % WS_URLS.length;
       scheduleReconnect('Disconnected (code ' + (event.code || 'unknown') +
         (event.reason ? ': ' + event.reason : '') + ')');
     };
