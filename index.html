@@ -443,7 +443,7 @@
         setStatus('Deriv connection error', false);
       }
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (generation !== connectionGeneration || ws !== socket) return;
       ws = null;
       activeSubscriptionId = null;
